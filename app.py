@@ -3,9 +3,10 @@ import streamlit as st
 from joblib import load
 import numpy as np
 from numpy.typing import ArrayLike
-import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+from model import MODELS, model_filename
 
-def load_and_predict(X: ArrayLike, filename: str = "linear_regression_model.joblib") -> ArrayLike:
+def load_and_predict(X: ArrayLike, filename: str = "linear_regression.joblib") -> ArrayLike:
     """
     Deserialize and load the regression model and use it to predict on user provided data.
 
@@ -46,18 +47,30 @@ def create_streamlit_app():
     Note: This function does not return any value. It directly manipulates the Streamlit app's UI by 
     writing content and rendering UI elements.
     """
-    st.title("Linear Regression Predictor")
+    st.title("Regression Predictor")
+
+    model_name = st.selectbox("Model", list(MODELS.keys()))
+
+    filename = model_filename(model_name)
+    model = load(filename)
+    metrics = load("metrics.joblib")[model_name]
+
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("R2 Score", f"{metrics['r2']:.3f}")
+    col2.metric("MSE", f"{metrics['mse']:.1f}")
+    col3.metric("Slope", f"{float(model.coef_[0]):.3f}")
+    col4.metric("Intercept", f"{float(model.intercept_):.3f}")
 
     input_feature = st.slider("Input feature", -3.0, 3.0, 0.0)
 
     if st.button("Predict value"):
-        prediction = load_and_predict([[input_feature]])
+        prediction = load_and_predict([[input_feature]], filename)
 
-        st.write(f"Prediction: {prediction[0]}")
+        st.write(f"Prediction: {prediction[0]:.3f}")
 
-        visualize_difference(input_feature, prediction[0])
+        visualize_difference(input_feature, prediction[0], model)
 
-def visualize_difference(input_feature: float, prediction: ArrayLike):
+def visualize_difference(input_feature: float, prediction: ArrayLike, model):
     """
     Deserialize and load the initial datasets. Calculate the difference between actual data
     in the 'y' dataset and the predicted value for a given 'input_feature'.
@@ -69,9 +82,9 @@ def visualize_difference(input_feature: float, prediction: ArrayLike):
     Args:
         input_feature (float): User provided data used for prediction.
         prediction (array-like): Predicted value.
+        model: Trained regression model used to draw the regression line and residuals.
 
     """
-    # Load the X and y datasets
     X_filename = "X.joblib"
     y_filename = "y.joblib"
 
@@ -81,32 +94,27 @@ def visualize_difference(input_feature: float, prediction: ArrayLike):
 
     actual_target = y[_index_of_closest(X, input_feature)]
 
-    # Calculate difference
-    difference = actual_target - prediction
+    difference = float(actual_target - prediction)
 
-    # Visualization
-    fig = plt.figure(figsize=(6,4))
+    X_flat = np.asarray(X).ravel()
+    order = np.argsort(X_flat)
+    line_x = X_flat[order]
+    line_y = model.predict(X_flat.reshape(-1, 1))[order]
 
-    plt.scatter(X, y, color="grey", label="Dataset")
-    plt.scatter(input_feature, actual_target, color="blue", label="Actual target")
-    plt.scatter(input_feature, prediction, color="red", label="Predicted target")
+    is_dark = st.context.theme.type == "dark"
+    line_color = "white" if is_dark else "black"
+    template = "plotly_dark" if is_dark else "plotly"
 
-    plt.legend()
-    plt.title("Difference between actual and predicted target")
-    plt.xlabel("Feature")
-    plt.ylabel("Target")
-    plt.grid(True)
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=X_flat, y=np.asarray(y), mode="markers", name="Dataset", marker=dict(color="lightgrey")))
+    fig.add_trace(go.Scatter(x=line_x, y=line_y, mode="lines", name="Regression line", line=dict(color="green")))
+    fig.add_trace(go.Scatter(x=[input_feature], y=[float(actual_target)], mode="markers", name="Actual target", marker=dict(color="blue", size=12)))
+    fig.add_trace(go.Scatter(x=[input_feature], y=[float(prediction)], mode="markers", name="Predicted target", marker=dict(color="red", size=12)))
+    fig.add_trace(go.Scatter(x=[input_feature, input_feature], y=[float(actual_target), float(prediction)], mode="lines", line=dict(color=line_color, dash="4px,2px"), showlegend=False))
+    fig.add_annotation(x=input_feature, y=(float(actual_target) + float(prediction)) / 2, text=f"{difference:.2f}", showarrow=False, xshift=20)
+    fig.update_layout(title="Difference between actual and predicted target", xaxis_title="Feature", yaxis_title="Target", template=template, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", xaxis=dict(hoverformat=".2f"), yaxis=dict(hoverformat=".2f"))
 
-    plt.plot([input_feature, input_feature], [actual_target, prediction], "k--")
-
-    plt.annotate(
-        f"{float(difference):.2f}",
-        (input_feature, (actual_target + prediction) / 2),
-        textcoords="offset points",
-        xytext=(10, 0),
-    )
-
-    st.pyplot(fig)
+    st.plotly_chart(fig, use_container_width=True)
 
 # This is a helper function. No need to edit it
 def _index_of_closest(X: ArrayLike, k: float) -> int:

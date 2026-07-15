@@ -1,14 +1,25 @@
 from __future__ import annotations
 from sklearn.datasets import make_regression
 from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_squared_error
+from sklearn.linear_model import LinearRegression, Ridge, Lasso
+from sklearn.metrics import mean_squared_error, r2_score
 import numpy as np
 from numpy.typing import ArrayLike
 from joblib import dump
 
 
-def train_regression_model(X_train: ArrayLike, y_train: ArrayLike) -> LinearRegression:
+MODELS = {
+    "Linear Regression": LinearRegression,
+    "Ridge": Ridge,
+    "Lasso": Lasso,
+}
+
+
+def model_filename(model_name: str) -> str:
+    return model_name.lower().replace(" ", "_") + ".joblib"
+
+
+def train_regression_model(X_train: ArrayLike, y_train: ArrayLike, model_name: str = "Linear Regression") -> LinearRegression:
     """
     Train a regression model using the provided training data.
 
@@ -19,13 +30,14 @@ def train_regression_model(X_train: ArrayLike, y_train: ArrayLike) -> LinearRegr
     Args:
         X_train (array-like): Training feature matrix.
         y_train (array-like): Target values for training.
+        model_name (str): Key from MODELS selecting which estimator to train.
 
     Returns:
         sklearn.linear_model.LinearRegression: Trained linear regression model.
 
     """
 
-    model = LinearRegression()
+    model = MODELS[model_name]()
     model.fit(X_train, y_train)
 
     return model
@@ -62,8 +74,12 @@ def evaluate_regression_model(model: LinearRegression, X_test: ArrayLike, y_test
     
     y_pred = model.predict(X_test)
     mse = mean_squared_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
 
     print(f"Mean Squared Error: {mse}")
+    print(f"R2 Score: {r2}")
+
+    return mse, r2
 
 def save_initial_datasets(X: ArrayLike, y: ArrayLike):
     """
@@ -93,14 +109,14 @@ if __name__ == '__main__':
     # Split the dataset into training and test sets
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-    # Train a linear regression model
-    model = train_regression_model(X_train, y_train)
+    metrics = {}
 
-    # Evaluate the model
-    evaluate_regression_model(model, X_test, y_test)
+    for model_name in MODELS:
+        model = train_regression_model(X_train, y_train, model_name)
+        mse, r2 = evaluate_regression_model(model, X_test, y_test)
+        save_regression_model(model, model_filename(model_name))
+        metrics[model_name] = {"mse": mse, "r2": r2}
 
-    # Save the model
-    save_regression_model(model)
+    dump(metrics, "metrics.joblib")
 
-    # Save datasets
     save_initial_datasets(X, y)
